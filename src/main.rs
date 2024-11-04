@@ -1,22 +1,28 @@
-//! A simple 3D scene with light shining over a cube sitting on a plane.
-
-use std::{f32::consts::PI, time::Duration};
-
 use bevy::{
     core_pipeline::{bloom::Bloom, tonemapping::Tonemapping}, 
     prelude::*,
 };
 use camera::{CameraFollowTarget, TopdownCamera};
 use rand::{thread_rng, Rng};
+use player::*;
+use animation::*;
 
 mod camera;
+mod player;
+mod animation;
 
-
+// Size
 const MAP_SIZE: usize = 25;
 const CUBE_SPACE: f32 = 0.2;
-// Snake data
 const HEAD_SIZE: f32 = 0.6;
 const BODY_SIZE: f32 = 0.4;
+const FOOD_SIZE: f32 = 0.4;
+
+// Colors
+const SNAKE_HEAD_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
+const SNAKE_BODY_COLOR: Color = Color::srgb(0.0, 0.39, 1.0);
+const FOOD_COLOR:       Color = Color::srgb(0.0, 0.39, 1.0);
+
 
 
 fn main() {
@@ -24,6 +30,8 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             camera::CameraPlugin,
+            player::PlayerPlugin,
+            animation::AnimationPlugin,
         ))
         .add_event::<SpawnFoodEvent>()
         .add_event::<SpawnSnakeTail>()
@@ -31,71 +39,12 @@ fn main() {
             spawn_map,
         ).chain())
         .add_systems(Update, (
-            handle_direction_change, 
-            move_snake, 
             spawn_food,
             spawn_snake_tail,
-            update_food_animation,
-            update_tail_appear_animation,
         ))
         .run();
 }
 
-#[derive(Component, Clone)]
-struct Snake {
-    pos: Vec3,
-    direction: Direction,
-    target_position: Vec3,
-    speed: f32,
-    wait: Timer,
-    bodies: Vec<Entity>,
-}
-#[derive(Component, Clone)]
-struct SnakeBody {
-    target_position: Vec3,
-}
-
-impl SnakeBody {
-    fn new(at: Vec3) -> Self {
-        Self { target_position: at }
-    }
-
-}
-
-impl Snake {
-    fn get_next_target(&self) -> Vec3 {
-        self.pos + self.direction.norm()
-    }
-}
-
-impl Default for Snake {
-    fn default() -> Self {
-        let start_pos = Vec3::new(12.0, 0.0, 12.0);
-        let start_dir = Direction::Up;
-        let start_target_pos = start_pos + start_dir.norm();
-        Self {
-            direction: start_dir,
-            pos: start_pos,
-            speed: 5.0,
-            target_position: start_target_pos,
-            wait: Timer::from_seconds(1.0, TimerMode::Repeating),
-            bodies: Vec::new(),
-        }
-    }
-}
-#[derive(Clone, Copy)]
-enum Direction { Up, Down, Left, Right }
-impl Direction {
-    fn norm(&self) -> Vec3 {
-        match self {
-            Direction::Up => Vec3::new(0.0 ,0.0, -1.0),
-            Direction::Down => Vec3::new(0.0, 0.0 ,1.0),
-            Direction::Left => Vec3::new(1.0, 0.0, 0.0),
-            Direction::Right => Vec3::new(-1.0, 0.0, 0.0),
-        }
-    }
-
-}
 #[derive(Event)]
 struct SpawnSnakeTail;
 #[derive(Event)]
@@ -112,16 +61,15 @@ fn spawn_map(
     // Spawn camera follow player
     commands.spawn((
         Camera3d::default(),
-        Camera {
-            hdr: true,
-            ..default()
-        },
-        Tonemapping::TonyMcMapface,
-        Bloom::NATURAL,
+        // Camera {
+        //     hdr: true,
+        //     ..default()
+        // },
+        // Tonemapping::TonyMcMapface,
+        // Bloom::NATURAL,
         Transform::from_xyz(-4.5, 15.5, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
         TopdownCamera::with_offset(Vec3::new(0.0, 15.0, 15.0)),
     ));
-
 
     let map_cube = meshes.add(Cuboid::new(1.0-CUBE_SPACE/2., 1.0-CUBE_SPACE/2., 1.0-CUBE_SPACE/2.));
     let map_cube_mat = materials.add(Color::srgb_u8(124, 144, 255));
@@ -138,7 +86,7 @@ fn spawn_map(
     // Spawn player
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(HEAD_SIZE, HEAD_SIZE, HEAD_SIZE))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(255, 0, 0))),
+        MeshMaterial3d(materials.add(SNAKE_HEAD_COLOR)),
         Transform::from_xyz((MAP_SIZE as f32 / 2.0).floor(), 0.0, (MAP_SIZE as f32 / 2.0).floor()),
         Snake::default(),
         CameraFollowTarget,
@@ -171,10 +119,10 @@ fn spawn_food(
         commands.spawn((
             Food,
             FoodAnimation::default(),
-            Mesh3d(meshes.add(Cuboid::new(0.35, 0.35, 0.35))),
+            Mesh3d(meshes.add(Cuboid::new(FOOD_SIZE, FOOD_SIZE, FOOD_SIZE))),
             Transform::from_xyz(x_rand as f32, 0.0, z_rand as f32),
             MeshMaterial3d(materials.add(StandardMaterial {
-                emissive: Color::srgb_u8(0, 100, 255).into(),
+                emissive: FOOD_COLOR.into(),
                 ..default()
             })),
         )).with_children(|parent| {
@@ -189,7 +137,6 @@ fn spawn_food(
             ));
         });
     }
-   
 }
 
 
@@ -229,10 +176,10 @@ fn spawn_snake_tail(
         .with_children(|parent| {
             parent.spawn((
                 TailAppearAnimation::default(),
-                Mesh3d(meshes.add(Cuboid::new(0.35, 0.35, 0.35))),
+                Mesh3d(meshes.add(Cuboid::new(BODY_SIZE, BODY_SIZE, BODY_SIZE))),
                 Transform::from_translation(Vec3::ZERO).with_scale(Vec3::ZERO),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    emissive: Color::srgb_u8(0, 100, 255).into(),
+                    emissive: SNAKE_BODY_COLOR.into(),
                     ..default()
                 })),
             ));
@@ -250,148 +197,4 @@ fn spawn_snake_tail(
         snake.bodies.push(entity);
     }
    
-}
-
-
-fn move_snake(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut snake_query: Query<(&mut Transform, &mut Snake), (With<Snake>, Without<Food>, Without<SnakeBody>)>,
-    mut snake_bodies_query: Query<(&mut Transform, &mut SnakeBody),  (With<SnakeBody>, Without<Snake>, Without<Food>)>,
-    food_query: Query<(Entity, &mut Transform), (With<Food>, Without<Snake>, Without<SnakeBody>)>,
-    mut spawn_food_event_writer: EventWriter<SpawnFoodEvent>,
-    mut spawn_snake_tail_event_writer: EventWriter<SpawnSnakeTail>,
-) {
-
-    let (mut transform, mut snake) = match snake_query.get_single_mut() {
-        Ok(transform) => transform,
-        Err(_) => return,
-    };
-    let snake_speed = snake.speed;
-    snake.wait.tick(Duration::from_secs_f32(time.delta_secs() * snake_speed));
-
-
-    if snake.wait.just_finished() {
-        snake.pos = snake.target_position;
-        transform.translation = snake.target_position;
-        snake.target_position = snake.get_next_target();
-
-        // update snake bodies
-        let snake_pos = snake.pos;
-        let mut prev_body_pos: Vec3 = Vec3::ZERO;
-        for (body_index, entity) in snake.bodies.iter_mut().enumerate() {
-            if let Ok((mut body_transform, mut body_data)) = snake_bodies_query.get_mut(*entity) {
-                body_transform.translation = body_data.target_position;
-                body_data.target_position = if body_index == 0 {
-                    snake_pos
-                } else {
-                    prev_body_pos
-                };
-                prev_body_pos = body_transform.translation;
-            }
-        }
-
-        // check for food collision
-        if let Ok((entity, food_transform)) = food_query.get_single() {
-            if (snake.pos.xz() - food_transform.translation.xz()).length() < 0.1 {
-                // despawn food
-                commands.entity(entity).despawn_recursive();
-                // spawn new food
-                spawn_food_event_writer.send(SpawnFoodEvent);
-                spawn_snake_tail_event_writer.send(SpawnSnakeTail);
-            }
-        }
-        
-    } else {
-        // update snake head pos
-        transform.translation += (snake.target_position - snake.pos).normalize() * time.delta_secs() * snake.speed;
-        // update snake bodies pos
-        let snake_speed = snake.speed;
-        for entity in snake.bodies.iter_mut() {
-            if let Ok((mut body_transform, body_data)) = snake_bodies_query.get_mut(*entity) {
-                let curr_pos = body_transform.translation;
-                body_transform.translation += (body_data.target_position - curr_pos).normalize_or_zero() * time.delta_secs() * snake_speed;
-            }
-        }
-    }
-}
-
-fn handle_direction_change(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Snake>,
-) {
-    for mut snake in query.iter_mut() {
-        if keyboard.just_pressed(KeyCode::KeyA) {
-            snake.direction = Direction::Right;
-        } else if keyboard.just_pressed(KeyCode::KeyD) {
-            snake.direction = Direction::Left;
-        } else if keyboard.just_pressed(KeyCode::KeyW) {
-            snake.direction = Direction::Up;
-        } else if keyboard.just_pressed(KeyCode::KeyS) {
-            snake.direction = Direction::Down;
-        } 
-    }
-}
-
-#[derive(Component)]
-pub struct TailAppearAnimation {
-    pub duration: f32,
-    pub elapsed: f32,
-}
-impl Default for TailAppearAnimation {
-    fn default() -> Self {
-        Self {
-            duration: 0.25,
-            elapsed: 0.0,
-        }
-    }
-}
-#[derive(Component)]
-pub struct FoodAnimation {
-    pub duration: f32,
-    pub elapsed: f32,
-    pub amplitude: f32,
-}
-impl Default for FoodAnimation {
-    fn default() -> Self {
-        Self {
-            duration: 2.0,
-            elapsed: 0.0,
-            amplitude: 0.5, // control how much the item moves up and down
-        }
-    }
-}
-
-fn update_food_animation(
-    time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut FoodAnimation)>,
-) {
-    for (mut transform, mut effect) in query.iter_mut() {
-        // rotate around y axis
-        effect.elapsed += time.delta_secs();
-        let cycle_pos = effect.elapsed / effect.duration;
-        let ease_val = ease_in_out_sine(cycle_pos);
-        transform.rotate(Quat::from_rotation_y(time.delta_secs()));
-        // move up down a little bit
-        transform.translation.y = ease_val * effect.amplitude;
-    }
-}
-
-fn update_tail_appear_animation (
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut Transform, &mut TailAppearAnimation)>,
-) {
-    for (entity, mut transform, mut anim) in query.iter_mut() {
-        anim.elapsed += time.delta_secs();
-        let progress = (anim.elapsed / anim.duration).min(1.0);
-        transform.scale = Vec3::splat(progress);
-        if progress >= 1.0 {
-            commands.entity(entity).remove::<TailAppearAnimation>();
-        }
-    }
-}
-
-pub fn ease_in_out_sine(t: f32) -> f32 {
-    0.5 * (1.0 - (std::f32::consts::PI * t).cos())
 }
