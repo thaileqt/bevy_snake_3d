@@ -2,6 +2,11 @@
 name = "snake_3d"
 version = "0.1.0"
 edition = "2021"
+author = ["Le Quang Thai <thaile.isme@gmail.com>"]
+description = "A simple 3d snake game"
+categories = ["game-development"]
+keywords = ["gamedev", "bevy"]
+license = "MIT OR Apache-2.0"
 
 [profile.dev]
 opt-level = 1

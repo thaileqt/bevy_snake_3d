@@ -2,15 +2,17 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::{Food, SpawnFoodEvent, SpawnSnakeTail};
+use crate::{camera::CameraFollowTarget, game_flow::{Food, SpawnFoodEvent, SpawnSnakeTail}, GameState};
 
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (
+        app
+        .add_systems(OnEnter(GameState::InGame), setup_camera_follow)
+        .add_systems(Update, (
             move_snake,
             handle_direction_change,
-        ));
+        ).run_if(in_state(GameState::InGame)));
     }
 }
 
@@ -69,6 +71,15 @@ impl Direction {
         }
     }
 
+}
+
+fn setup_camera_follow(
+    mut commands: Commands,
+    player: Query<Entity, With<Snake>>,
+) {
+    if let Ok(player) = player.get_single() {
+        commands.entity(player).insert(CameraFollowTarget);
+    }
 }
 
 

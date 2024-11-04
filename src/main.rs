@@ -3,13 +3,14 @@ use bevy::{
     prelude::*,
 };
 use camera::{CameraFollowTarget, TopdownCamera};
-use rand::{thread_rng, Rng};
+use game_flow::{Food, SpawnFoodEvent};
 use player::*;
-use animation::*;
 
 mod camera;
 mod player;
 mod animation;
+mod menu;
+mod game_flow;
 
 // Size
 const MAP_SIZE: usize = 25;
@@ -32,16 +33,12 @@ fn main() {
             camera::CameraPlugin,
             player::PlayerPlugin,
             animation::AnimationPlugin,
+            menu::MenuPlugin,
+            game_flow::GameFlowPlugin,
         ))
         .init_state::<GameState>()
-        .add_event::<SpawnFoodEvent>()
-        .add_event::<SpawnSnakeTail>()
         .add_systems(OnEnter(GameState::Loading), load_assets)
         .add_systems(OnExit(GameState::Loading), spawn_world)
-        .add_systems(Update, (
-            spawn_food,
-            spawn_snake_tail,
-        ).run_if(in_state(GameState::InGame)))
         .run();
 }
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
@@ -52,12 +49,7 @@ enum GameState {
     InGame,
 }
 
-#[derive(Event)]
-struct SpawnSnakeTail;
-#[derive(Event)]
-struct SpawnFoodEvent;
-#[derive(Component)]
-struct Food;
+
 
 #[derive(Resource)]
 pub struct GlobalAssets {
@@ -108,7 +100,7 @@ fn load_assets(
         food_mat,
     });
 
-    next_state.set(GameState::InGame);
+    next_state.set(GameState::Menu);
 }
 
 fn spawn_world(
@@ -145,7 +137,7 @@ fn spawn_world(
         MeshMaterial3d(game_assets.snake_head_mat.clone()),
         Transform::from_xyz((MAP_SIZE as f32 / 2.0).floor(), 0.0, (MAP_SIZE as f32 / 2.0).floor()),
         Snake::default(),
-        CameraFollowTarget,
+        // CameraFollowTarget,
     )).with_children(|parent| {
         parent.spawn((
             SpotLight {
@@ -158,88 +150,8 @@ fn spawn_world(
         ));
     });
 
-    spawn_food_event.send(SpawnFoodEvent);
-}
-
-fn spawn_food(
-    mut commands: Commands,
-    game_assets: Res<GlobalAssets>,
-    mut spawn_food_event: EventReader<SpawnFoodEvent>,
-) {
-    for _ in spawn_food_event.read() {
-        let mut rng = thread_rng();
-        let x_rand = rng.gen_range(0..MAP_SIZE);
-        let z_rand = rng.gen_range(0..MAP_SIZE);
+    for _ in 0..4 {
+        spawn_food_event.send(SpawnFoodEvent);
+    }
     
-        commands.spawn((
-            Food,
-            FoodAnimation::default(),
-            Mesh3d(game_assets.food.clone()),
-            Transform::from_xyz(x_rand as f32, 0.0, z_rand as f32),
-            MeshMaterial3d(game_assets.food_mat.clone()),
-        )).with_children(|parent| {
-            parent.spawn((
-                SpotLight {
-                    intensity: 5_000_000.0,
-                    range: 10.0,
-                    shadows_enabled: true,
-                    ..default()
-                },
-                Transform::from_xyz(0.0, 5.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
-            ));
-        });
-    }
-}
-
-
-fn spawn_snake_tail(
-    mut ev_reader: EventReader<SpawnSnakeTail>,
-    mut commands: Commands,
-    game_assets: Res<GlobalAssets>,
-    mut snake_query: Query<(&Transform, &mut Snake), (With<Snake>, Without<SnakeBody>)>,
-    snake_bodies_query: Query<(&Transform, &SnakeBody), (With<SnakeBody>, Without<Snake>)>,
-) {
-    for _ in ev_reader.read() {
-        let (snake_transform, mut snake) =  snake_query.single_mut();
-        // let mut tail: SnakeBody = SnakeBody::new(Vec3::ZERO);
-        let mut tail_init_pos: Vec3 = Vec3::ZERO;
-        let tail =  if snake.bodies.is_empty() {
-            tail_init_pos = snake_transform.translation - snake.direction.norm();
-            SnakeBody::new(snake.pos)
-        } else {
-            if let Ok((transform, data)) = snake_bodies_query.get(*snake.bodies.last().unwrap()) {
-                
-                let last_tail_dir = (data.target_position - transform.translation).normalize();
-                tail_init_pos = transform.translation - last_tail_dir;
-                SnakeBody::new(data.target_position-last_tail_dir)
-            } else {
-                SnakeBody::new(Vec3::ZERO)
-            }
-        };
-        let entity = commands.spawn((
-            tail,
-            Transform::from_translation(tail_init_pos),
-            Visibility::Visible,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                TailAppearAnimation::default(),
-                Mesh3d(game_assets.snake_body.clone()),
-                Transform::from_translation(Vec3::ZERO).with_scale(Vec3::ZERO),
-                MeshMaterial3d(game_assets.snake_body_mat.clone()),
-            ));
-            parent.spawn((
-                SpotLight {
-                    range: 10.0,
-                    intensity: 500_000.0,
-                    shadows_enabled: false,
-                    ..default()
-                },
-                Transform::from_xyz(0.0, 3.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
-            ));
-        })
-        .id();
-        snake.bodies.push(entity);
-    }
-   
 }

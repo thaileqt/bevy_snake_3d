@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::{Food, SpawnFoodEvent, SpawnSnakeTail};
+use crate::GameState;
 
 pub struct AnimationPlugin;
 impl Plugin for AnimationPlugin {
