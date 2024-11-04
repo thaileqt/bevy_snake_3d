@@ -33,16 +33,23 @@ fn main() {
             player::PlayerPlugin,
             animation::AnimationPlugin,
         ))
+        .init_state::<GameState>()
         .add_event::<SpawnFoodEvent>()
         .add_event::<SpawnSnakeTail>()
-        .add_systems(Startup, (
-            spawn_map,
-        ).chain())
+        .add_systems(OnEnter(GameState::Loading), load_assets)
+        .add_systems(OnExit(GameState::Loading), spawn_world)
         .add_systems(Update, (
             spawn_food,
             spawn_snake_tail,
-        ))
+        ).run_if(in_state(GameState::InGame)))
         .run();
+}
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
+enum GameState {
+    #[default]
+    Loading,
+    Menu,
+    InGame,
 }
 
 #[derive(Event)]
@@ -52,10 +59,61 @@ struct SpawnFoodEvent;
 #[derive(Component)]
 struct Food;
 
-fn spawn_map(
+#[derive(Resource)]
+pub struct GlobalAssets {
+    pub map_cube: Handle<Mesh>,
+    pub map_cube_mat: Handle<StandardMaterial>,
+    // Snake
+    pub snake_head: Handle<Mesh>,
+    pub snake_head_mat: Handle<StandardMaterial>,
+    pub snake_body: Handle<Mesh>,
+    pub snake_body_mat: Handle<StandardMaterial>,
+    // Food
+    pub food: Handle<Mesh>,
+    pub food_mat: Handle<StandardMaterial>,
+}
+
+fn load_assets(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    // Map
+    let map_cube = meshes.add(Cuboid::new(1.0-CUBE_SPACE/2., 1.0-CUBE_SPACE/2., 1.0-CUBE_SPACE/2.));
+    let map_cube_mat = materials.add(Color::srgb_u8(124, 144, 255));
+    // Snake
+    let snake_head = meshes.add(Cuboid::new(HEAD_SIZE, HEAD_SIZE, HEAD_SIZE));
+    let snake_head_mat = materials.add(SNAKE_HEAD_COLOR);
+    let snake_body = meshes.add(Cuboid::new(BODY_SIZE, BODY_SIZE, BODY_SIZE));
+    let snake_body_mat = materials.add(StandardMaterial {
+        emissive: SNAKE_BODY_COLOR.into(),
+        ..default()
+    });
+    // Food
+    let food = meshes.add(Cuboid::new(FOOD_SIZE, FOOD_SIZE, FOOD_SIZE));
+    let food_mat = materials.add(StandardMaterial {
+        emissive: FOOD_COLOR.into(),
+        ..default()
+    });
+
+    commands.insert_resource(GlobalAssets {
+        map_cube,
+        map_cube_mat,
+        snake_head,
+        snake_head_mat,
+        snake_body,
+        snake_body_mat,
+        food,
+        food_mat,
+    });
+
+    next_state.set(GameState::InGame);
+}
+
+fn spawn_world(
+    mut commands: Commands,
+    game_assets: Res<GlobalAssets>,
     mut spawn_food_event: EventWriter<SpawnFoodEvent>,
 ) {
     // Spawn camera follow player
@@ -71,13 +129,11 @@ fn spawn_map(
         TopdownCamera::with_offset(Vec3::new(0.0, 15.0, 15.0)),
     ));
 
-    let map_cube = meshes.add(Cuboid::new(1.0-CUBE_SPACE/2., 1.0-CUBE_SPACE/2., 1.0-CUBE_SPACE/2.));
-    let map_cube_mat = materials.add(Color::srgb_u8(124, 144, 255));
     for i in 0..MAP_SIZE {
         for j in 0..MAP_SIZE {
             commands.spawn((
-                Mesh3d(map_cube.clone()),
-                MeshMaterial3d(map_cube_mat.clone()),
+                Mesh3d(game_assets.map_cube.clone()),
+                MeshMaterial3d(game_assets.map_cube_mat.clone()),
                 Transform::from_xyz(i as f32, -1.0, j as f32),
             ));
         }
@@ -85,8 +141,8 @@ fn spawn_map(
 
     // Spawn player
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(HEAD_SIZE, HEAD_SIZE, HEAD_SIZE))),
-        MeshMaterial3d(materials.add(SNAKE_HEAD_COLOR)),
+        Mesh3d(game_assets.snake_head.clone()),
+        MeshMaterial3d(game_assets.snake_head_mat.clone()),
         Transform::from_xyz((MAP_SIZE as f32 / 2.0).floor(), 0.0, (MAP_SIZE as f32 / 2.0).floor()),
         Snake::default(),
         CameraFollowTarget,
@@ -107,8 +163,7 @@ fn spawn_map(
 
 fn spawn_food(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    game_assets: Res<GlobalAssets>,
     mut spawn_food_event: EventReader<SpawnFoodEvent>,
 ) {
     for _ in spawn_food_event.read() {
@@ -119,12 +174,9 @@ fn spawn_food(
         commands.spawn((
             Food,
             FoodAnimation::default(),
-            Mesh3d(meshes.add(Cuboid::new(FOOD_SIZE, FOOD_SIZE, FOOD_SIZE))),
+            Mesh3d(game_assets.food.clone()),
             Transform::from_xyz(x_rand as f32, 0.0, z_rand as f32),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                emissive: FOOD_COLOR.into(),
-                ..default()
-            })),
+            MeshMaterial3d(game_assets.food_mat.clone()),
         )).with_children(|parent| {
             parent.spawn((
                 SpotLight {
@@ -143,8 +195,7 @@ fn spawn_food(
 fn spawn_snake_tail(
     mut ev_reader: EventReader<SpawnSnakeTail>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    game_assets: Res<GlobalAssets>,
     mut snake_query: Query<(&Transform, &mut Snake), (With<Snake>, Without<SnakeBody>)>,
     snake_bodies_query: Query<(&Transform, &SnakeBody), (With<SnakeBody>, Without<Snake>)>,
 ) {
@@ -169,19 +220,13 @@ fn spawn_snake_tail(
             tail,
             Transform::from_translation(tail_init_pos),
             Visibility::Visible,
-            // TailAppearAnimation::default(),
-            
-            // MeshMaterial3d(materials.add(Color::srgb_u8(0, 100, 255))),
         ))
         .with_children(|parent| {
             parent.spawn((
                 TailAppearAnimation::default(),
-                Mesh3d(meshes.add(Cuboid::new(BODY_SIZE, BODY_SIZE, BODY_SIZE))),
+                Mesh3d(game_assets.snake_body.clone()),
                 Transform::from_translation(Vec3::ZERO).with_scale(Vec3::ZERO),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    emissive: SNAKE_BODY_COLOR.into(),
-                    ..default()
-                })),
+                MeshMaterial3d(game_assets.snake_body_mat.clone()),
             ));
             parent.spawn((
                 SpotLight {
