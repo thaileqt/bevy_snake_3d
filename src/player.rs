@@ -116,7 +116,7 @@ fn move_snake(
 
         // update snake bodies
         let snake_pos = snake.pos;
-        let snake_target = snake.target_position;
+        // let snake_target = snake.target_position;
         let mut prev_body_pos: Vec3 = Vec3::ZERO;
         for (body_index, entity) in snake.bodies.iter_mut().enumerate() {
             if let Ok((mut body_transform, mut body_data)) = snake_bodies_query.get_mut(*entity) {
@@ -128,10 +128,10 @@ fn move_snake(
                 };
                 prev_body_pos = body_transform.translation;
 
-                // self collision check :D
-                if snake_target == body_data.target_position {
-                    next_state.set(GameState::Menu);
-                }
+                // // self collision check :D
+                // if snake_target == body_data.target_position {
+                //     next_state.set(GameState::GameOver);
+                // }
             }
         }
         

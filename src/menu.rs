@@ -133,6 +133,10 @@ fn menu(
                 next_state.set(GameState::InGame);
             }
             Interaction::Hovered => {
+                commands.spawn((
+                    AudioPlayer::<AudioSource>(game_assets.pickup.clone()),
+                    PlaybackSettings::DESPAWN,
+                ));
                 *color = WHITE.with_alpha(1.0).into();
             }
             Interaction::None => {

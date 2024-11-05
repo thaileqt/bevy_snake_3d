@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul, Sub};
+use std::{collections::HashSet, ops::{Add, Mul, Sub}};
 
 use rand::{seq::SliceRandom, thread_rng, Rng};
 
@@ -51,4 +51,16 @@ impl<T: Clone> RandomChooser<T> for Vec<T> {
                .map(|&i| self[i].clone())
                .collect()
     }
+}
+
+pub fn create_range(n: f32, m: usize) -> Vec<f32> {
+    // calc the step size for the range
+    let step = n / (m as f32 - 1.0);
+    // gen elements by stepping from 0 up to n
+    (0..m).map(|i| i as f32 * step).collect()
+}
+
+pub fn has_common_elements<T: Eq + std::hash::Hash>(vec1: &[T], vec2: &[T]) -> bool {
+    let set: HashSet<_> = vec1.iter().collect();
+    vec2.iter().any(|item| set.contains(item))
 }

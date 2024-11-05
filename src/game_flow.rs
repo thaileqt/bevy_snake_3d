@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::player::*;
 use crate::animation::*;
 use crate::utils::*;
+use crate::STATE_TRANSITION_TIME;
 use crate::{CubeState, MapState, GameState, GlobalAssets, MAP_SIZE};
 
 
@@ -23,7 +24,8 @@ impl Plugin for GameFlowPlugin {
                 spawn_food_event.send(SpawnFoodEvent);
             })
             .add_systems(OnEnter(GameState::InGame), (spawn_hud))
-            .add_systems(OnExit(GameState::InGame), cleanup_game)
+            .add_systems(OnEnter(GameState::GameOver), on_game_over)
+            .add_systems(OnExit(GameState::GameOver), cleanup_game)
             .add_systems(Update, (
                 spawn_food,
             ))
@@ -34,7 +36,8 @@ impl Plugin for GameFlowPlugin {
                 update_play_time,
                 MapState::update,
                 map_modify_event_listener,
-            ).run_if(in_state(GameState::InGame)));
+            ).run_if(in_state(GameState::InGame)))
+            .add_systems(Update, MapState::update_transition_timer.run_if(in_state(GameState::GameOver)));
     }
 }
 #[derive(Event)]
@@ -251,7 +254,8 @@ fn spawn_food(
     }
 }
 
-
+#[derive(Component)]
+pub struct BodyIndex(pub usize);
 fn spawn_snake_tail(
     mut commands:       Commands,
     game_assets:        Res<GlobalAssets>,
@@ -283,6 +287,7 @@ fn spawn_snake_tail(
         ))
         .with_children(|parent| {
             parent.spawn((
+                BodyIndex(snake.bodies.len()),
                 TailAppearAnimation::default(),
                 Mesh3d(game_assets.snake_body.clone()),
                 Transform::from_translation(Vec3::ZERO).with_scale(Vec3::ZERO),
@@ -312,34 +317,47 @@ fn check_for_game_end(
     mut commands:   Commands,
     game_assets:    Res<GlobalAssets>,
     mut next_state: ResMut<NextState<GameState>>,
-    player:         Query<&Snake>,
     cube_query:     Query<&CubeState>,
+    player:         Query<&Snake>,
+    snake_bodies_query: Query<&SnakeBody>,
 ) {
     let player = match player.get_single() {
         Ok(player) => player,
         Err(_) => return,
     };
+    let mut end_game = || {
+        commands.spawn((
+            AudioPlayer::<AudioSource>(game_assets.dead.clone()),
+            PlaybackSettings::DESPAWN,
+        ));
+        next_state.set(GameState::GameOver);
+        return;
+    };
     // Check for player walking outside map
     if player.target_position.x < 0.0 || player.target_position.z < 0.0 || player.target_position.x >= MAP_SIZE as f32 || player.target_position.z >= MAP_SIZE as f32 {
-        commands.spawn((
-            AudioPlayer::<AudioSource>(game_assets.game_over.clone()),
-            PlaybackSettings::DESPAWN,
-        ));
-        next_state.set(GameState::Menu);
-        return;
+        end_game();
     }
+    let obstacles = cube_query.iter()
+    .filter(|cube| !cube.walkable).map(|c| c.pos).collect::<Vec<_>>();
 
     // Check collision between player and obstacle cubes
-    let should_end: bool = cube_query.iter()
-        .filter(|cube| !cube.walkable)
-        .any(|cube| cube.pos == (player.target_position.x as usize, player.target_position.z as usize));
-    if should_end {
-        commands.spawn((
-            AudioPlayer::<AudioSource>(game_assets.game_over.clone()),
-            PlaybackSettings::DESPAWN,
-        ));
-        next_state.set(GameState::Menu);
-        return;
+    if obstacles.iter()
+    .any(|&cube| cube == (player.target_position.x as usize, player.target_position.z as usize)) {
+        end_game();
+    }
+
+    // Check self collision
+    if snake_bodies_query.iter()
+    .any(|body| player.target_position == body.target_position) {
+        end_game()
+    }
+    
+    // check if any body collide with obstacle
+    let body_poses: Vec<(usize, usize)> = snake_bodies_query.iter()
+        .map(|b| (b.target_position.x as usize, b.target_position.z as usize))
+        .collect();
+    if has_common_elements(&body_poses, &obstacles) {
+        end_game();
     }
 }
 
@@ -358,3 +376,16 @@ fn cleanup_game(
     cubes.iter().for_each(|c| commands.entity(c).despawn_recursive());
     commands.entity(hud.single()).despawn_recursive();
 }
+
+fn on_game_over(
+    mut commands: Commands,
+    snake_bodies_query: Query<(Entity, &BodyIndex)>,
+) {
+    let body_count = snake_bodies_query.iter().count();
+    let range = create_range(STATE_TRANSITION_TIME as f32 - 2.0, body_count);
+    for (e, body_index) in snake_bodies_query.iter() {
+        commands.entity(e).insert(DeadEffect::new(Timer::from_seconds(range[body_index.0], TimerMode::Once)));
+    }
+}
+
+

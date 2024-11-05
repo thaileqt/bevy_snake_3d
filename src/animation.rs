@@ -1,5 +1,5 @@
 use std::{ops::{Add, Mul, Sub}, time::Duration};
-use crate::{utils::*, CubeState, FOOD_COLOR};
+use crate::{game_flow::BodyIndex, utils::*, CubeState, Snake, FOOD_COLOR};
 use bevy::prelude::*;
 
 use crate::{GameState, GlobalAssets};
@@ -12,6 +12,7 @@ impl Plugin for AnimationPlugin {
             update_tail_appear_animation,
             update_deactive_cube_animation,
             update_active_cube_animation,
+            update_dead_effect,
         ));
     }
 }
@@ -193,3 +194,39 @@ fn update_active_cube_animation (
     }
 }
 
+#[derive(Component)]
+pub struct DeadEffect {
+    timer: Timer,
+}
+
+impl DeadEffect {
+    pub fn new(timer: Timer) -> Self {
+        Self { timer }
+    }
+}
+
+
+fn update_dead_effect (
+    mut commands:   Commands,
+    time:           Res<Time>,
+    game_assets:    Res<GlobalAssets>,
+    mut query:      Query<
+        (Entity, &mut Transform, &mut MeshMaterial3d<StandardMaterial>, &BodyIndex, &mut DeadEffect)
+    >,
+    player_query:   Query<&Snake>,
+) {
+    for (entity, mut transform, mut mat, body_index, mut anim) in query.iter_mut() {
+        anim.timer.tick(Duration::from_secs_f32(time.delta_secs()));
+        if anim.timer.just_finished() {
+            *mat = MeshMaterial3d(game_assets.red_mat.clone());
+            commands.entity(entity).remove::<DeadEffect>();
+
+            if player_query.single().bodies.len() == body_index.0 + 1 {
+                commands.spawn((
+                    AudioPlayer::<AudioSource>(game_assets.game_over.clone()),
+                    PlaybackSettings::DESPAWN,
+                ));
+            }
+        }
+    }
+}

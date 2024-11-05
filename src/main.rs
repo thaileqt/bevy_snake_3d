@@ -30,6 +30,8 @@ const FOOD_COLOR:       Color = Color::srgb(0.0, 0.39, 1.0);
 const RED_COLOR:        Color = Color::srgb(1.0, 0.0, 0.0);
 const GREEN_COLOR:      Color = Color::srgb(0.0, 1.0, 0.0);
 
+const STATE_TRANSITION_TIME: f32 = 4.0;
+
 
 fn main() {
     App::new()
@@ -67,6 +69,7 @@ enum GameState {
     Loading,
     Menu,
     InGame,
+    GameOver,
 }
 
 
@@ -76,6 +79,7 @@ pub struct GlobalAssets {
     // @@ Audio @@
     // sfx
     pub pickup: Handle<AudioSource>,
+    pub dead: Handle<AudioSource>,
     pub game_over: Handle<AudioSource>,
     pub speed_boost: Handle<AudioSource>,
     pub cube_move: Handle<AudioSource>,
@@ -110,6 +114,7 @@ pub struct MapState {
     score: i32,
     time_elapsed: f32,
     map_change_timer: Timer,
+    transition_to_menu_timer: Timer,
 }
 type TilePos = (usize, usize);
 #[derive(Clone, Component)]
@@ -124,6 +129,7 @@ impl Default for MapState {
             score: 0, 
             time_elapsed: 0.0,
             map_change_timer: Timer::from_seconds(5.0, TimerMode::Repeating), 
+            transition_to_menu_timer: Timer::from_seconds(STATE_TRANSITION_TIME, TimerMode::Once),
         }
     }
 }
@@ -143,6 +149,19 @@ impl MapState {
             ev_writer.send(MapModifyEvent{
                 cube_count: 10 + ((map_state.time_elapsed / 20.) as usize).min(25)
             });
+        }
+    }
+
+    fn update_transition_timer(
+        time:           Res<Time>,
+        mut map_state:  ResMut<MapState>, 
+        mut next_state: ResMut<NextState<GameState>>
+    ) {
+        map_state.transition_to_menu_timer.tick(Duration::from_secs_f32(time.delta_secs()));
+        if map_state.transition_to_menu_timer.just_finished() {
+            map_state.transition_to_menu_timer.reset();
+            next_state.set(GameState::Menu);
+
         }
     }
 }
@@ -178,6 +197,7 @@ fn load_assets(
 
     commands.insert_resource(GlobalAssets {
         pickup: asset_server.load("audio/plop.ogg"),
+        dead: asset_server.load("audio/dead.ogg"),
         game_over: asset_server.load("audio/game_over.ogg"),
         speed_boost: asset_server.load("audio/speed_boost.ogg"),
         cube_move: asset_server.load("audio/plop.ogg"),
