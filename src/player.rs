@@ -2,7 +2,10 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::{camera::CameraFollowTarget, game_flow::{Food, SpawnFoodEvent, SpawnSnakeTail}, GameState};
+use crate::{camera::CameraFollowTarget, game_flow::{Food, SpawnFoodEvent, SpawnSnakeTail}, GameState, GlobalAssets};
+
+pub const BASE_SPEED: f32 = 3.0;
+pub const SPEEED_INCREASE_AFTER_NUM_TAILS: usize = 10;
 
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
@@ -26,17 +29,7 @@ pub struct Snake {
     pub wait: Timer,
     pub bodies: Vec<Entity>,
 }
-#[derive(Component, Clone)]
-pub struct SnakeBody {
-    pub target_position: Vec3,
-}
 
-impl SnakeBody {
-    pub fn new(at: Vec3) -> Self {
-        Self { target_position: at }
-    }
-
-}
 
 impl Snake {
     fn get_next_target(&self) -> Vec3 {
@@ -52,14 +45,27 @@ impl Default for Snake {
         Self {
             direction: start_dir,
             pos: start_pos,
-            speed: 5.0,
+            speed: BASE_SPEED,
             target_position: start_target_pos,
             wait: Timer::from_seconds(1.0, TimerMode::Repeating),
             bodies: Vec::new(),
         }
     }
 }
-#[derive(Clone, Copy)]
+
+#[derive(Component, Clone)]
+pub struct SnakeBody {
+    pub target_position: Vec3,
+}
+
+impl SnakeBody {
+    pub fn new(at: Vec3) -> Self {
+        Self { target_position: at }
+    }
+
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub enum Direction { Up, Down, Left, Right }
 impl Direction {
     pub fn norm(&self) -> Vec3 {
@@ -86,6 +92,7 @@ fn setup_camera_follow(
 fn move_snake(
     mut commands: Commands,
     time: Res<Time>,
+    game_assets: Res<GlobalAssets>,
     mut snake_query: Query<(&mut Transform, &mut Snake), (With<Snake>, Without<Food>, Without<SnakeBody>)>,
     mut snake_bodies_query: Query<(&mut Transform, &mut SnakeBody),  (With<SnakeBody>, Without<Snake>, Without<Food>)>,
     food_query: Query<(Entity, &mut Transform), (With<Food>, Without<Snake>, Without<SnakeBody>)>,
@@ -124,6 +131,8 @@ fn move_snake(
         // check for food collision
         if let Ok((entity, food_transform)) = food_query.get_single() {
             if (snake.pos.xz() - food_transform.translation.xz()).length() < 0.1 {
+                // play audio
+                commands.spawn(AudioPlayer::<AudioSource>(game_assets.pickup.clone()));
                 // despawn food
                 commands.entity(entity).despawn_recursive();
                 // spawn new food
@@ -152,7 +161,12 @@ fn handle_direction_change(
 ) {
     for mut snake in query.iter_mut() {
         if keyboard.just_pressed(KeyCode::KeyA) {
-            snake.direction = Direction::Right;
+            if snake.direction == Direction::Left {
+                // play 
+            }
+            else {
+                snake.direction = Direction::Right;
+            }
         } else if keyboard.just_pressed(KeyCode::KeyD) {
             snake.direction = Direction::Left;
         } else if keyboard.just_pressed(KeyCode::KeyW) {
