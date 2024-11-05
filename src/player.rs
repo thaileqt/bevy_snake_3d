@@ -72,8 +72,8 @@ impl Direction {
         match self {
             Direction::Up => Vec3::new(0.0 ,0.0, -1.0),
             Direction::Down => Vec3::new(0.0, 0.0 ,1.0),
-            Direction::Left => Vec3::new(1.0, 0.0, 0.0),
-            Direction::Right => Vec3::new(-1.0, 0.0, 0.0),
+            Direction::Left => Vec3::new(-1.0, 0.0, 0.0),
+            Direction::Right => Vec3::new(1.0, 0.0, 0.0),
         }
     }
 
@@ -98,6 +98,7 @@ fn move_snake(
     food_query: Query<(Entity, &mut Transform), (With<Food>, Without<Snake>, Without<SnakeBody>)>,
     mut spawn_food_event_writer: EventWriter<SpawnFoodEvent>,
     mut spawn_snake_tail_event_writer: EventWriter<SpawnSnakeTail>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
 
     let (mut transform, mut snake) = match snake_query.get_single_mut() {
@@ -115,6 +116,7 @@ fn move_snake(
 
         // update snake bodies
         let snake_pos = snake.pos;
+        let snake_target = snake.target_position;
         let mut prev_body_pos: Vec3 = Vec3::ZERO;
         for (body_index, entity) in snake.bodies.iter_mut().enumerate() {
             if let Ok((mut body_transform, mut body_data)) = snake_bodies_query.get_mut(*entity) {
@@ -125,14 +127,23 @@ fn move_snake(
                     prev_body_pos
                 };
                 prev_body_pos = body_transform.translation;
+
+                // self collision check :D
+                if snake_target == body_data.target_position {
+                    next_state.set(GameState::Menu);
+                }
             }
         }
+        
 
         // check for food collision
         if let Ok((entity, food_transform)) = food_query.get_single() {
             if (snake.pos.xz() - food_transform.translation.xz()).length() < 0.1 {
                 // play audio
-                commands.spawn(AudioPlayer::<AudioSource>(game_assets.pickup.clone()));
+                commands.spawn((
+                    AudioPlayer::<AudioSource>(game_assets.pickup.clone()),
+                    PlaybackSettings::DESPAWN,
+                ));
                 // despawn food
                 commands.entity(entity).despawn_recursive();
                 // spawn new food
@@ -156,23 +167,47 @@ fn move_snake(
 }
 
 fn handle_direction_change(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Snake>,
+    mut commands:   Commands,
+    keyboard:       Res<ButtonInput<KeyCode>>,
+    game_assets:    Res<GlobalAssets>,
+    mut query:      Query<&mut Snake>,
 ) {
     for mut snake in query.iter_mut() {
+        let mut play_fail_audio = || {
+            commands.spawn((
+                AudioPlayer::<AudioSource>(game_assets.pickup.clone()),
+                PlaybackSettings::DESPAWN,
+            ));
+        };
         if keyboard.just_pressed(KeyCode::KeyA) {
-            if snake.direction == Direction::Left {
-                // play 
+            if snake.direction == Direction::Right {
+                play_fail_audio();
+            }
+            else {
+                snake.direction = Direction::Left;
+            }
+        } else if keyboard.just_pressed(KeyCode::KeyD) {
+            if snake.direction == Direction::Right {
+                play_fail_audio();
             }
             else {
                 snake.direction = Direction::Right;
             }
-        } else if keyboard.just_pressed(KeyCode::KeyD) {
-            snake.direction = Direction::Left;
         } else if keyboard.just_pressed(KeyCode::KeyW) {
-            snake.direction = Direction::Up;
+            if snake.direction == Direction::Down {
+                play_fail_audio();
+            }
+            else {
+                snake.direction = Direction::Up;
+            }
         } else if keyboard.just_pressed(KeyCode::KeyS) {
-            snake.direction = Direction::Down;
+            if snake.direction == Direction::Up {
+                play_fail_audio();
+            }
+            else {
+                snake.direction = Direction::Down;
+            }
         } 
+        
     }
 }

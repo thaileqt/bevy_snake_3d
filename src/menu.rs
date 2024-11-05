@@ -1,6 +1,6 @@
-use bevy::prelude::*;
+use bevy::{color::palettes::{css::{GREEN, WHITE}, tailwind::{GREEN_100, GREEN_950}}, prelude::*};
 use rand::{thread_rng, Rng};
-use crate::{camera::{CameraFollowTarget, TopdownCamera}, game_flow::Food, GameState, MAP_SIZE};
+use crate::{camera::{CameraFollowTarget, TopdownCamera}, game_flow::Food, utils::format_time, GameState, GlobalAssets, MapState, MAP_SIZE};
 
 pub struct MenuPlugin;
 impl Plugin for MenuPlugin {
@@ -26,11 +26,10 @@ struct MenuData {
 }
 
 const NORMAL_BUTTON: Color = Color::srgba(0.15, 0.15, 0.15, 0.4);
-const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
-const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 
 
-fn setup_menu(mut commands: Commands) {
+
+fn setup_menu(mut commands: Commands, map_state: Res<MapState>) {
     // setup camera movement
     let mut rng = thread_rng();
     let x_rand = rng.gen_range(0..MAP_SIZE);
@@ -73,21 +72,33 @@ fn setup_menu(mut commands: Commands) {
                     ..default()
                 }
             ));
+            if map_state.score != 0 {
+                parent.spawn((
+                    Text::new(format!("[last game] score {} / time {}", map_state.score, format_time(map_state.time_elapsed) )),
+                    TextFont {
+                        font_size: 25.0,
+                        ..default()
+                    },
+                ));
+            }
+            
+            
             parent
                 .spawn((
                     Button,
                     Node {
                         width: Val::Px(150.),
                         height: Val::Px(65.),
-                        // horizontally center child text
+                        border: UiRect::all(Val::Px(2.0)),
                         justify_content: JustifyContent::Center,
-                        // vertically center child text
                         align_items: AlignItems::Center,
                         ..default()
                     },
                     BackgroundColor(NORMAL_BUTTON),
+                    BorderColor(Color::WHITE.with_alpha(0.)),
                 ))
                 .with_children(|parent| {
+                    
                     parent.spawn((
                         Text::new("Play"),
                         TextFont {
@@ -103,23 +114,29 @@ fn setup_menu(mut commands: Commands) {
 }
 
 fn menu(
+    mut commands: Commands,
+    game_assets: Res<GlobalAssets>,
     mut next_state: ResMut<NextState<GameState>>,
     mut interaction_query: Query<
-        (&Interaction, &mut BackgroundColor),
+        (&Interaction, &mut BorderColor),
         (Changed<Interaction>, With<Button>),
     >,
 ) {
     for (interaction, mut color) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
-                *color = PRESSED_BUTTON.into();
+                *color = WHITE.with_alpha(1.0).into();
+                commands.spawn((
+                    AudioPlayer::<AudioSource>(game_assets.button_click.clone()),
+                    PlaybackSettings::DESPAWN,
+                ));
                 next_state.set(GameState::InGame);
             }
             Interaction::Hovered => {
-                *color = HOVERED_BUTTON.into();
+                *color = WHITE.with_alpha(1.0).into();
             }
             Interaction::None => {
-                *color = NORMAL_BUTTON.into();
+                *color = WHITE.with_alpha(0.0).into();
             }
         }
     }

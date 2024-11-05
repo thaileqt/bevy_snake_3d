@@ -81,7 +81,6 @@ fn update_tail_appear_animation (
 pub struct DeactiveCubeAnimation {
     pub warn_duration: f32,
     pub warn_elapsed: f32,
-    pub origin_mat: Handle<StandardMaterial>,
 
     pub duration: f32,
     pub elapsed: f32,
@@ -89,11 +88,10 @@ pub struct DeactiveCubeAnimation {
     pub to: Vec3,
 }
 impl DeactiveCubeAnimation {
-    pub fn new(origin_mat: Handle<StandardMaterial>, from: Vec3, to: Vec3) -> Self {
+    pub fn new(from: Vec3, to: Vec3) -> Self {
         Self {
             warn_duration: 1.5,
             warn_elapsed: 0.0,
-            origin_mat,
             duration: 0.5,
             elapsed: 0.0,
             from,
@@ -103,16 +101,15 @@ impl DeactiveCubeAnimation {
 }
 
 fn update_deactive_cube_animation (
-    mut commands: Commands,
-    time: Res<Time>,
-    game_assets: Res<GlobalAssets>,
-    mut query: Query<(Entity, &mut Transform, &mut CubeState, &mut MeshMaterial3d<StandardMaterial> , &mut DeactiveCubeAnimation)>,
+    time:           Res<Time>,
+    game_assets:    Res<GlobalAssets>,
+    mut query:      Query<(&mut Transform, &mut CubeState, &mut MeshMaterial3d<StandardMaterial> , &mut DeactiveCubeAnimation)>,
 ) {
-    for (entity, mut transform, mut cube, mut mat, mut anim) in query.iter_mut() {
+    for (mut transform, mut cube, mut mat, mut anim) in query.iter_mut() {
         // Phase 1
         if anim.warn_elapsed < anim.warn_duration {
             anim.warn_elapsed += time.delta_secs();
-            let progress = (anim.warn_elapsed / anim.warn_duration).min(1.0);
+            // let progress = (anim.warn_elapsed / anim.warn_duration).min(1.0);
             if anim.warn_elapsed < 1.0 {
                 *mat = MeshMaterial3d(game_assets.red_mat.clone());
             }
@@ -149,7 +146,6 @@ fn update_deactive_cube_animation (
 pub struct ActiveCubeAnimation {
     pub warn_duration: f32,
     pub warn_elapsed: f32,
-    pub origin_mat: Handle<StandardMaterial>,
 
     pub duration: f32,
     pub elapsed: f32,
@@ -157,11 +153,10 @@ pub struct ActiveCubeAnimation {
     pub to: Vec3,
 }
 impl ActiveCubeAnimation {
-    pub fn new(origin_mat: Handle<StandardMaterial>, from: Vec3, to: Vec3) -> Self {
+    pub fn new(from: Vec3, to: Vec3) -> Self {
         Self {
             warn_duration: 1.5,
             warn_elapsed: 0.0,
-            origin_mat,
             duration: 0.5,
             elapsed: 0.0,
             from,
@@ -171,10 +166,12 @@ impl ActiveCubeAnimation {
 }
 
 fn update_active_cube_animation (
-    mut commands: Commands,
-    time: Res<Time>,
-    game_assets: Res<GlobalAssets>,
-    mut query: Query<(Entity, &mut Transform, &mut CubeState, &mut MeshMaterial3d<StandardMaterial> , &mut ActiveCubeAnimation)>,
+    mut commands:   Commands,
+    time:           Res<Time>,
+    game_assets:    Res<GlobalAssets>,
+    mut query:      Query<
+        (Entity, &mut Transform, &mut CubeState, &mut MeshMaterial3d<StandardMaterial>, &mut ActiveCubeAnimation)
+    >,
 ) {
     for (entity, mut transform, mut cube, mut mat, mut anim) in query.iter_mut() {
         // Phase 1

@@ -23,29 +23,6 @@ pub fn format_time(seconds: f32) -> String {
     format!("{:.0}:{:02.0}", mins, secs)
 }
 
-pub fn choose_random<T: Clone>(vec: &[T]) -> Option<T> {
-    if vec.is_empty() {
-        return None;
-    }
-    
-    let mut rng = thread_rng();
-    let index = rng.gen_range(0..vec.len());
-    Some(vec[index].clone()) 
-}
-
-pub fn choose_random_n<T: Clone>(vec: &Vec<T>, n: usize) -> Vec<T> {
-    let mut rng = thread_rng();
-    let mut indices: Vec<usize> = (0..vec.len()).collect();
-    indices.shuffle(&mut rng);
-    
-    // Take min of n and vec length to avoid panic
-    let count = n.min(vec.len());
-    indices.truncate(count);
-    
-    indices.iter()
-           .map(|&i| vec[i].clone())
-           .collect()
-}
 
 pub trait RandomChooser<T> {
     fn choose_random(&self) -> Option<T>;

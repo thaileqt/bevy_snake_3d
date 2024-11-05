@@ -1,17 +1,9 @@
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use rand::thread_rng;
-use rand::Rng;
-use crate::player;
 use crate::player::*;
 use crate::animation::*;
-use crate::utils::choose_random;
-use crate::utils::choose_random_n;
-use crate::utils::format_time;
-use crate::utils::RandomChooser;
-use crate::CubeState;
-use crate::MapState;
-use crate::{GameState, GlobalAssets, MAP_SIZE};
+use crate::utils::*;
+use crate::{CubeState, MapState, GameState, GlobalAssets, MAP_SIZE};
 
 
 const BOOST_SPEED_AT: [usize; 5] = [
@@ -25,10 +17,13 @@ impl Plugin for GameFlowPlugin {
             .add_event::<SpawnFoodEvent>()
             .add_event::<SpawnSnakeTail>()
             .add_event::<MapModifyEvent>()
-            .add_systems(OnEnter(GameState::InGame), |mut spawn_food_event: EventWriter<SpawnFoodEvent>| {
+            .add_event::<GameOver>()
+            .add_systems(OnEnter(GameState::InGame), 
+            |mut spawn_food_event: EventWriter<SpawnFoodEvent>| {
                 spawn_food_event.send(SpawnFoodEvent);
             })
             .add_systems(OnEnter(GameState::InGame), (spawn_hud))
+            .add_systems(OnExit(GameState::InGame), cleanup_game)
             .add_systems(Update, (
                 spawn_food,
             ))
@@ -56,14 +51,16 @@ pub struct Food;
 pub struct ScoreText;
 #[derive(Component)]
 pub struct PlayTimeText;
+#[derive(Event)]
+pub struct GameOver;
 
 
 #[derive(SystemParam)]
 struct PositionQueryParam<'w, 's> {
-    cube_query: Query<'w, 's, (Entity, &'static CubeState)>,
-    player_query: Query<'w, 's, &'static Snake>,
+    cube_query:     Query<'w, 's, (Entity, &'static CubeState), Without<DeactiveCubeAnimation>>,
+    player_query:   Query<'w, 's, &'static Snake>,
     player_body_query: Query<'w, 's, &'static SnakeBody>,
-    food_query: Query<'w, 's, &'static Transform, With<Food>>,
+    food_query:     Query<'w, 's, &'static Transform, With<Food>>,
 }
 
 impl<'w, 's> PositionQueryParam<'w, 's> {
@@ -81,7 +78,7 @@ impl<'w, 's> PositionQueryParam<'w, 's> {
                 player_poses.push((body.target_position.x as usize, body.target_position.z as usize));
             }
             // add some position around snake head
-            let offset: usize = (player.speed.min(6.0) - 1.0) as usize;
+            let offset: usize = (player.speed.min(10.0)) as usize;
             for i in 0..offset {
                 for j in 0..offset {
                     let pos = (i, j);
@@ -117,23 +114,24 @@ impl<'w, 's> PositionQueryParam<'w, 's> {
 }
 
 fn map_modify_event_listener(
-    mut ev_reader: EventReader<MapModifyEvent>,
-    mut commands: Commands,
-    map_state: Res<MapState>,
-    game_assets: Res<GlobalAssets>,
+    mut ev_reader:  EventReader<MapModifyEvent>,
+    mut commands:   Commands,
     mut cubes_query: Query<&mut Transform, (Without<DeactiveCubeAnimation>, Without<Food>)>,
     inactive_cubes: Query<(Entity, &Transform),(With<DeactiveCubeAnimation>, Without<ActiveCubeAnimation>, Without<Food>)>,
-    pos_param: PositionQueryParam,
+    pos_param:      PositionQueryParam,
 
 ) {
     for ev in ev_reader.read() {
-        // let cubes = get_entities_to_deactive(&pos_param);
-        let cubes = pos_param.get_empty_cubes().choose_random_n(ev.cube_count);
-        let cubes = cubes.iter().map(|c| c.0).collect::<Vec<_>>();
+        let cubes = pos_param
+            .get_empty_cubes()
+            .choose_random_n(ev.cube_count)
+            .iter()
+            .map(|c| c.0)
+            .collect::<Vec<_>>();
         for e in cubes.iter() {
             if let Ok(transform) = cubes_query.get_mut(*e) {
                 commands.entity(*e).insert(DeactiveCubeAnimation::new(
-                    game_assets.map_cube_mat.clone(), 
+                    // game_assets.map_cube_mat.clone(), 
                     transform.translation, 
                     transform.translation.with_y(transform.translation.y + 1.0)
                 ));
@@ -145,19 +143,24 @@ fn map_modify_event_listener(
         inactive_cubes.iter().for_each(|(entity, transform)| {
             commands.entity(entity).remove::<DeactiveCubeAnimation>();
             commands.entity(entity).insert(ActiveCubeAnimation::new(
-                game_assets.map_cube_mat_emission.clone(),
+                // game_assets.map_cube_mat_emission.clone(),
                 transform.translation,
                 transform.translation.with_y(transform.translation.y - 1.0)
             ));
         });
     }
 }
-
+#[derive(Component)]
+struct HUD;
 fn spawn_hud(
     mut commands: Commands,
+    mut map_state: ResMut<MapState>,
 ) {
+    map_state.time_elapsed = 0.0;
+    map_state.score = 0;
+
     commands.spawn((
-       
+        HUD,
         Node {
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Start,
@@ -182,9 +185,9 @@ fn spawn_hud(
     });
 }
 fn update_score(
-    mut map_state: ResMut<MapState>,
-    mut query: Query<&mut Text, With<ScoreText>>,
-    mut evs: EventReader<SpawnSnakeTail>,
+    mut map_state:  ResMut<MapState>,
+    mut query:      Query<&mut Text, With<ScoreText>>,
+    mut evs:        EventReader<SpawnSnakeTail>,
 ) {
     for _ in evs.read() {
         let mut score_text = match query.get_single_mut() {
@@ -209,15 +212,11 @@ fn update_play_time(
 }
 
 fn spawn_food(
-    mut commands: Commands,
-    game_assets: Res<GlobalAssets>,
-    map_state: Res<MapState>,
-    // cube_query: Query<&CubeState>,
-    // player_query: Query<&Snake>,
-    // player_body_query: Query<&SnakeBody>,
+    mut commands:   Commands,
+    game_assets:    Res<GlobalAssets>,
+    map_state:      Res<MapState>,
+    pos_param:      PositionQueryParam,
     mut spawn_food_event: EventReader<SpawnFoodEvent>,
-    // food_query: Query<&Transform, With<Food>>,
-    pos_param: PositionQueryParam,
 ) {
     for _ in spawn_food_event.read() {
 
@@ -252,95 +251,13 @@ fn spawn_food(
     }
 }
 
-// fn get_empty_positions(
-//     cube_query: &Query<&CubeState>,
-//     player_query: &Query<&Snake>,
-//     player_body_query: &Query<&SnakeBody>,
-//     food_query: &Query<&Transform, With<Food>>,
-// ) -> Vec<(usize, usize)> {
-//     let mut walkable_poses = cube_query.iter()
-//             .filter(|c| c.walkable)
-//             .map(|c| c.pos)
-//             .collect::<Vec<_>>();
-//     // println!("{:?}", walkable_poses);
-//     let mut player_poses = Vec::new();
-
-//     if let Ok(player) = player_query.get_single() {
-//         player_poses.push((player.target_position.x as usize, player.target_position.z as usize));
-//         for body in player_body_query.iter() {
-//             player_poses.push((body.target_position.x as usize, body.target_position.z as usize));
-//         }
-//     }
-//     if let Ok(food_transform) = food_query.get_single() {
-//         let food_pos = (food_transform.translation.x as usize, food_transform.translation.z as usize) ;
-//         walkable_poses.retain(|&pos| pos != food_pos);
-//     }
-
-//     walkable_poses
-//     .into_iter()
-//     .filter(|x| !player_poses.contains(x))
-//     .collect::<Vec<_>>()
-
-// }
-
-
-fn get_entities_to_deactive(
-    pos_params: &PositionQueryParam,
-) -> Vec<(Entity, (usize, usize))> {
-    let mut walkable_poses = pos_params.cube_query.iter()
-            .filter(|(_, c)| c.walkable)
-            .map(|(entity, c)| (entity, c.pos))
-            .collect::<Vec<_>>();
-    // println!("{:?}", walkable_poses);
-    let mut player_poses = Vec::new();
-
-    if let Ok(player) = pos_params.player_query.get_single() {
-        player_poses.push((player.target_position.x as usize, player.target_position.z as usize));
-        for body in pos_params.player_body_query.iter() {
-            player_poses.push((body.target_position.x as usize, body.target_position.z as usize));
-        }
-        // add some position around snake head
-        let offset: usize = (player.speed.min(6.0) - 1.0) as usize;
-        for i in 0..offset {
-            for j in 0..offset {
-                let pos = (i, j);
-                if !player_poses.contains(&pos) {
-                    player_poses.push(pos);
-                }
-            }
-        }
-    }
-    
-    
-    if let Ok(food_transform) = pos_params.food_query.get_single() {
-        let mut food_poses = Vec::new();
-        food_poses.push((food_transform.translation.x as usize, food_transform.translation.z as usize)) ;
-        let food_offset: usize = 3;
-        for i in 0..food_offset {
-            for j in 0..food_offset {
-                let pos = (i, j);
-                if !food_poses.contains(&pos) {
-                    food_poses.push(pos);
-                }
-            }
-        }
-        walkable_poses.retain(|&(_, pos)| !food_poses.contains(&pos));
-    }
-
-    walkable_poses
-    .into_iter()
-    .filter(|(_, x)| !player_poses.contains(x))
-    // .map(|(entity, _)| entity)
-    .collect::<Vec<_>>()
-
-}
 
 fn spawn_snake_tail(
-    mut ev_reader: EventReader<SpawnSnakeTail>,
-    mut commands: Commands,
-    game_assets: Res<GlobalAssets>,
-    mut snake_query: Query<(&Transform, &mut Snake), (With<Snake>, Without<SnakeBody>)>,
+    mut commands:       Commands,
+    game_assets:        Res<GlobalAssets>,
+    mut snake_query:    Query<(&Transform, &mut Snake), (With<Snake>, Without<SnakeBody>)>,
     snake_bodies_query: Query<(&Transform, &SnakeBody), (With<SnakeBody>, Without<Snake>)>,
+    mut ev_reader:      EventReader<SpawnSnakeTail>,
 ) {
     for _ in ev_reader.read() {
         let (snake_transform, mut snake) =  snake_query.single_mut();
@@ -371,15 +288,6 @@ fn spawn_snake_tail(
                 Transform::from_translation(Vec3::ZERO).with_scale(Vec3::ZERO),
                 MeshMaterial3d(game_assets.snake_body_mat.clone()),
             ));
-            // parent.spawn((
-            //     SpotLight {
-            //         range: 10.0,
-            //         intensity: 500_000.0,
-            //         shadows_enabled: false,
-            //         ..default()
-            //     },
-            //     Transform::from_xyz(0.0, 3.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
-            // ));
         })
         .id();
         snake.bodies.push(entity);
@@ -388,16 +296,24 @@ fn spawn_snake_tail(
         BOOST_SPEED_AT
             .iter()
             .any(|&num_body| num_body == snake.bodies.len())
-            .then(||snake.speed += 1.0);
+            .then(||{
+                commands.spawn((
+                    AudioPlayer::<AudioSource>(game_assets.speed_boost.clone()),
+                    PlaybackSettings::DESPAWN,
+                ));
+                snake.speed += 1.0
+            });
     }
    
 }
 
+/// Check player outside of map, check player collide with any obstacle cube (player collide with body handled in `player::move_player`)
 fn check_for_game_end(
-    map_state: Res<MapState>,
-    player: Query<&Snake>,
-    cube_query: Query<&CubeState>,
+    mut commands:   Commands,
+    game_assets:    Res<GlobalAssets>,
     mut next_state: ResMut<NextState<GameState>>,
+    player:         Query<&Snake>,
+    cube_query:     Query<&CubeState>,
 ) {
     let player = match player.get_single() {
         Ok(player) => player,
@@ -405,19 +321,40 @@ fn check_for_game_end(
     };
     // Check for player walking outside map
     if player.target_position.x < 0.0 || player.target_position.z < 0.0 || player.target_position.x >= MAP_SIZE as f32 || player.target_position.z >= MAP_SIZE as f32 {
-        info!("Player outside");
+        commands.spawn((
+            AudioPlayer::<AudioSource>(game_assets.game_over.clone()),
+            PlaybackSettings::DESPAWN,
+        ));
+        next_state.set(GameState::Menu);
         return;
     }
 
-    // Check collision between player and non-walkable cube
+    // Check collision between player and obstacle cubes
     let should_end: bool = cube_query.iter()
         .filter(|cube| !cube.walkable)
         .any(|cube| cube.pos == (player.target_position.x as usize, player.target_position.z as usize));
     if should_end {
-        info!("Shoud end");
+        commands.spawn((
+            AudioPlayer::<AudioSource>(game_assets.game_over.clone()),
+            PlaybackSettings::DESPAWN,
+        ));
+        next_state.set(GameState::Menu);
         return;
     }
+}
 
-    
-    
+/// Remove game entities spawned during GameState::InGame
+fn cleanup_game(
+    mut commands:   Commands,
+    player:         Query<Entity, (With<Snake>, Without<SnakeBody>)>,
+    snake_bodies_query: Query<Entity, (With<SnakeBody>, Without<Snake>)>,
+    food:           Query<Entity, With<Food>>,
+    cubes:          Query<Entity, With<CubeState>>,
+    hud:            Query<Entity, With<HUD>>,
+) {
+    commands.entity(player.single()).despawn_recursive();
+    commands.entity(food.single()).despawn_recursive();
+    snake_bodies_query.iter().for_each(|b| commands.entity(b).despawn_recursive());
+    cubes.iter().for_each(|c| commands.entity(c).despawn_recursive());
+    commands.entity(hud.single()).despawn_recursive();
 }
