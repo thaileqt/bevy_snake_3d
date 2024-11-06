@@ -312,7 +312,7 @@ fn spawn_snake_tail(
    
 }
 
-/// Check player outside of map, check player collide with any obstacle cube (player collide with body handled in `player::move_player`)
+/// Check player outside of map, check head/body collide with any obstacle cube
 fn check_for_game_end(
     mut commands:   Commands,
     game_assets:    Res<GlobalAssets>,

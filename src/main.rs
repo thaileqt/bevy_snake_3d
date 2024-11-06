@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::{
     audio::AudioPlugin, core_pipeline::{bloom::Bloom, tonemapping::Tonemapping}, 
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, 
-    pbr::NotShadowCaster, prelude::*
+    pbr::{CascadeShadowConfigBuilder, NotShadowCaster}, prelude::*
 };
 use camera::TopdownCamera;
 use game_flow::{MapModifyEvent, SpawnFoodEvent};
@@ -42,7 +42,10 @@ fn main() {
                     global_volume: GlobalVolume::new(0.5),
                     ..default()
                 }
-            ),
+            ).set(AssetPlugin {
+                meta_check: bevy::asset::AssetMetaCheck::Never,
+                ..default()
+            }),
             camera::CameraPlugin,
             player::PlayerPlugin,
             animation::AnimationPlugin,
@@ -246,14 +249,19 @@ fn spawn_world(
             // Spawn camera follow player
             commands.spawn((
                 Camera3d::default(),
-                // Camera {
-                //     hdr: true,
-                //     ..default()
-                // },
+                Camera {
+                    hdr: true,
+                    ..default()
+                },
                 // Tonemapping::TonyMcMapface,
                 // Bloom::NATURAL,
                 Transform::from_xyz(-4.5, 15.5, 19.0).looking_at(Vec3::ZERO, Vec3::Y),
                 TopdownCamera::with_offset(Vec3::new(0.0, 15.0, 15.0)),
+                // CascadeShadowConfigBuilder {
+                //     num_cascades: 4,
+                //     maximum_distance: 30.0,
+                //     ..default()
+                // }.build(),
             ));
         }
     }
@@ -270,7 +278,7 @@ fn spawn_world(
                 Mesh3d(game_assets.map_cube.clone()),
                 MeshMaterial3d(game_assets.map_cube_mat.clone()),
                 Transform::from_xyz(i as f32, -1.0, j as f32),
-                NotShadowCaster,
+                // NotShadowCaster,
             )).id();
             grid.push(cube);
         }
@@ -287,8 +295,16 @@ fn spawn_world(
         // CameraFollowTarget,
     )).with_children(|parent| {
         parent.spawn((
+             #[cfg(target_arch = "wasm32")]
+            PointLight {
+                range: 15.0,
+                intensity: 5_000_000.0,
+                shadows_enabled: true,
+                ..default()
+            },
+            #[cfg(not(target_arch = "wasm32"))]
             SpotLight {
-                range: 50.0,
+                range: 20.0,
                 intensity: 5_000_000.0,
                 shadows_enabled: true,
                 ..default()
